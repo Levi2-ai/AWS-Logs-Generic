@@ -170,27 +170,31 @@ class AWSLogFetcher:
                 aws_secret_access_key=self.secret_key,
                 region_name=self.region
             )
+
+            if self.role_arn:
+                # Create STS client
+                sts_client = self.session.client('sts')
+
+                # Assume role
+                logger.info(f"Assuming role: {self.role_arn}")
+                assumed_role = sts_client.assume_role(
+                    RoleArn=self.role_arn,
+                    RoleSessionName="AWSLogFetcherSession"
+                )
+
+                credentials = assumed_role['Credentials']
+
+                self.assumed_session = boto3.Session(
+                    aws_access_key_id=credentials['AccessKeyId'],
+                    aws_secret_access_key=credentials['SecretAccessKey'],
+                    aws_session_token=credentials['SessionToken'],
+                    region_name=self.region
+                )
+                self.s3_client = self.assumed_session.client('s3')
+            else:
+                logger.info("No role ARN provided. Using direct AWS access key and secret key.")
+                self.s3_client = self.session.client('s3')
             
-            # Create STS client
-            sts_client = self.session.client('sts')
-            
-            # Assume role
-            logger.info(f"Assuming role: {self.role_arn}")
-            assumed_role = sts_client.assume_role(
-                RoleArn=self.role_arn,
-                RoleSessionName="AWSLogFetcherSession"
-            )
-            
-            credentials = assumed_role['Credentials']
-            
-            self.assumed_session = boto3.Session(
-                aws_access_key_id=credentials['AccessKeyId'],
-                aws_secret_access_key=credentials['SecretAccessKey'],
-                aws_session_token=credentials['SessionToken'],
-                region_name=self.region
-            )
-            
-            self.s3_client = self.assumed_session.client('s3')
             logger.info("Successfully initialized AWS clients")
             
         except Exception as e:
@@ -557,7 +561,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Fetch AWS service logs from S3 bucket')
     parser.add_argument('--access-key', required=True, help='AWS access key')
     parser.add_argument('--secret-key', required=True, help='AWS secret key')
-    parser.add_argument('--role-arn', required=True, help='AWS role ARN to assume')
+    parser.add_argument('--role-arn', help='AWS role ARN to assume')
     parser.add_argument('--bucket', required=True, help='S3 bucket name')
     parser.add_argument('--service', required=True, 
                        choices=['cloudtrail', 'vpcflow', 'config', 'kms', 'macie', 'trusted-advisor', 
